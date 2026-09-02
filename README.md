@@ -8,14 +8,12 @@ Open-source `.fl` scripting runtime for Paper/Spigot — the language inside [Fl
 
 ## What this repo contains
 
-This repository ships **`net.fliver:zen-engine`** only:
+This repository ships **`net.fliver:zen-engine`**:
 
 - Parser (`on fliver request`, `function`, `options`)
 - Runtime (`FlValue`, loops, functions, HTTP request context)
 - Bukkit builtins (players, server metrics, bans, CSV storage)
 - Extensible `SyntaxRegistry` for host-specific expressions
-
-It does **not** include Fliver cloud pairing, the outbound tunnel, Insights, or the proprietary Zen plugin jar. Those stay in the private Fliver monorepo and are shaded into the distributed `Fliver-Zen-*.jar`.
 
 ## Maven
 
