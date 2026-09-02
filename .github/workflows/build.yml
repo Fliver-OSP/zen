@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    paths:
+      - "**"
+  pull_request:
+    paths:
+      - "**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and test (Java 8 bytecode)
+        run: mvn -B clean verify
+      - name: Confirm class file major version is 52 (Java 8)
+        run: |
+          jar tf target/zen-engine-*.jar | head -n 5
+          class=$(jar tf target/zen-engine-*.jar | grep 'net/fliver/fl/FlEngine.class' | head -n 1)
+          unzip -p target/zen-engine-*.jar "$class" > /tmp/FlEngine.class
+          major=$(python3 - <<'PY'
+          import struct
+          with open("/tmp/FlEngine.class","rb") as f:
+              f.read(6)
+              major=struct.unpack(">H", f.read(2))[0]
+          print(major)
+          PY
+          )
+          echo "major=$major"
+          test "$major" = "52"
