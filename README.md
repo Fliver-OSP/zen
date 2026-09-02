@@ -1,4 +1,6 @@
-# Zen Engine
+<p align="left">
+  <img src="https://cdn.fliver.net/a/u/487c215c-ba91-4bbf-90ff-35e190a41fdd" width="160" />
+</p>
 
 Open-source `.fl` scripting runtime for Paper/Spigot — the language inside [Fliver Zen](https://fliver.net).
 
