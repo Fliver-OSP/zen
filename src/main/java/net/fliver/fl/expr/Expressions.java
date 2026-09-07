@@ -36,7 +36,7 @@ public final class Expressions {
   public static Expression parse(String raw) throws ScriptException {
     net.fliver.fl.builtins.BuiltinSyntax.ensureLoaded();
     String text = raw.trim();
-    if (text.isEmpty()) throw new ScriptException("Empty expression.");
+    if (text.isEmpty()) throw new ScriptException("empty-expression", "Empty expression.");
 
     // Parentheses
     if (text.startsWith("(") && text.endsWith(")") && balancedParens(text)) {
@@ -673,7 +673,7 @@ public final class Expressions {
       };
     }
 
-    throw new ScriptException("Unknown expression: " + text);
+    throw new ScriptException("unknown-expression", "Unknown expression: " + text);
   }
 
   private static long jvmUptimeMs() {
@@ -713,6 +713,7 @@ public final class Expressions {
       return parseJsonOfForm(b.substring(3).trim());
     }
     throw new ScriptException(
+        "invalid-json",
         "Invalid json constructor. Use: json {\"key\": {_var}, ...} or json of \"key\" = {_var} and ...");
   }
 
@@ -723,7 +724,7 @@ public final class Expressions {
       List<String> parts = splitTopLevel(inner, ',');
       for (String part : parts) {
         int colon = indexOfTopLevel(part, ':');
-        if (colon < 0) throw new ScriptException("Invalid json entry: " + part);
+        if (colon < 0) throw new ScriptException("invalid-json", "Invalid json entry: " + part);
         String keyRaw = part.substring(0, colon).trim();
         String valRaw = part.substring(colon + 1).trim();
         keys.add(unquote(keyRaw));
@@ -768,7 +769,7 @@ public final class Expressions {
     List<String> parts = splitTopLevel(body, " and ");
     for (String part : parts) {
       int sep = indexOfJsonOfSeparator(part);
-      if (sep < 0) throw new ScriptException("Invalid json of entry: " + part);
+      if (sep < 0) throw new ScriptException("invalid-json", "Invalid json of entry: " + part);
       keys.add(unquote(part.substring(0, sep).trim()));
       values.add(parse(part.substring(sep + 1).trim()));
     }

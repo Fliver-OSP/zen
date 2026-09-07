@@ -281,7 +281,8 @@ public final class ScriptContext {
   /** Called once per executed statement; throws once the request's step budget is exhausted. */
   public void consumeStep() throws ScriptException {
     if (++steps > MAX_STEPS) {
-      throw new ScriptException("Script exceeded maximum execution steps (possible infinite loop).");
+      throw new ScriptException(
+          "step-limit", "Script exceeded maximum execution steps (possible infinite loop).");
     }
   }
 

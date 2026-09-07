@@ -44,7 +44,7 @@ public final class Effects {
   public static Effect parse(String raw) throws ScriptException {
     net.fliver.fl.builtins.BuiltinSyntax.ensureLoaded();
     String text = raw.trim();
-    if (text.isEmpty()) throw new ScriptException("Empty effect.");
+    if (text.isEmpty()) throw new ScriptException("empty-effect", "Empty effect.");
 
     Effect registered = net.fliver.fl.registry.SyntaxRegistry.get().tryEffect(text);
     if (registered != null) return registered;
@@ -186,7 +186,7 @@ public final class Effects {
       };
     }
 
-    throw new ScriptException("Unknown effect: " + text);
+    throw new ScriptException("unknown-effect", "Unknown effect: " + text);
   }
 
   public static boolean isBlockHeader(String trimmed) {

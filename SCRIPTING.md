@@ -107,3 +107,23 @@ on fliver request "status" with method "GET":
     set {_hours} to hours the server has been online
     set fliver response to json {"hours": {_hours}}
 ```
+
+## Error messages
+Every compile-time and runtime error carries the source location and a
+stable code, rendered as `message (at file.fl:12) [code]`. The reported line
+is the exact file line — including inside functions and nested blocks.
+CSV storage errors are message-based (`CSV ...`) and also carry a location.
+
+| Code | Meaning |
+| ---- | ------- |
+| `unknown-effect` | No effect matches this line |
+| `unknown-expression` | No expression matches this part |
+| `empty-effect` / `empty-expression` | Blank statement where a value was expected |
+| `unknown-block` | A `:` line that opens no known block |
+| `unexpected-indent` | Indented line that belongs to no block |
+| `invalid-condition` | Malformed `if` / `else if` header |
+| `invalid-json` | Malformed `json {...}` / `json of ...` |
+| `unknown-function` | `call` targets a function that does not exist |
+| `recursion-limit` | Function calls nested deeper than 32 |
+| `loop-limit` | A `while` loop passed 10000 iterations |
+| `step-limit` | The request passed 200000 executed statements |

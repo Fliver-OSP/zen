@@ -34,13 +34,13 @@ public final class Conditions {
 
   public static String stripIfHeader(String trimmed) throws ScriptException {
     Matcher m = IF_HEADER.matcher(trimmed.trim());
-    if (!m.matches()) throw new ScriptException("Not an if-header: " + trimmed);
+    if (!m.matches()) throw new ScriptException("invalid-condition", "Not an if-header: " + trimmed);
     return m.group(1).trim();
   }
 
   public static String stripElseIfHeader(String trimmed) throws ScriptException {
     Matcher m = ELSE_IF_HEADER.matcher(trimmed.trim());
-    if (!m.matches()) throw new ScriptException("Not an else-if-header: " + trimmed);
+    if (!m.matches()) throw new ScriptException("invalid-condition", "Not an else-if-header: " + trimmed);
     return m.group(1).trim();
   }
 

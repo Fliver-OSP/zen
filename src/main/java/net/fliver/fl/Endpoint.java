@@ -1,5 +1,6 @@
 package net.fliver.fl;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -15,6 +16,7 @@ public final class Endpoint {
   private final String sourceFile;
   private final int line;
   private final List<String> body;
+  private final List<Integer> bodyLineNumbers;
   private final Set<String> methods;
 
   public Endpoint(String path, String sourceFile, int line, List<String> body) {
@@ -23,10 +25,28 @@ public final class Endpoint {
 
   public Endpoint(
       String path, String sourceFile, int line, List<String> body, Set<String> methods) {
+    this(path, sourceFile, line, body, methods, null);
+  }
+
+  /**
+   * @param bodyLineNumbers 1-based file line per body entry, parallel to
+   *     {@code body}; null or short lists fall back to body-relative numbers.
+   */
+  public Endpoint(
+      String path,
+      String sourceFile,
+      int line,
+      List<String> body,
+      Set<String> methods,
+      List<Integer> bodyLineNumbers) {
     this.path = path;
     this.sourceFile = sourceFile;
     this.line = line;
     this.body = Collections.unmodifiableList(body);
+    this.bodyLineNumbers =
+        bodyLineNumbers == null
+            ? null
+            : Collections.unmodifiableList(new ArrayList<Integer>(bodyLineNumbers));
     if (methods == null || methods.isEmpty()) {
       this.methods = Collections.emptySet();
     } else {
@@ -54,6 +74,14 @@ public final class Endpoint {
 
   public List<String> getBody() {
     return body;
+  }
+
+  /**
+   * 1-based file line per body entry, parallel to {@link #getBody()}.
+   * Null when the endpoint was built without line tracking.
+   */
+  public List<Integer> getBodyLineNumbers() {
+    return bodyLineNumbers;
   }
 
   /** Empty = any method allowed. */

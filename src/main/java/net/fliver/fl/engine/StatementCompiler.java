@@ -59,7 +59,8 @@ public final class StatementCompiler {
     if (cached != null) {
       return cached;
     }
-    List<Statement> compiled = compile(endpoint.getBody());
+    List<Statement> compiled =
+        compile(endpoint.getBody(), endpoint.getSourceFile(), endpoint.getBodyLineNumbers());
     ENDPOINT_CACHE.put(endpoint, compiled);
     return compiled;
   }
@@ -69,19 +70,34 @@ public final class StatementCompiler {
     if (cached != null) {
       return cached;
     }
-    List<Statement> compiled = compile(fn.getBody());
+    List<Statement> compiled = compile(fn.getBody(), fn.getSourceFile(), fn.getBodyLineNumbers());
     FUNCTION_CACHE.put(fn, compiled);
     return compiled;
   }
 
   public static List<Statement> compile(List<String> bodyLines) throws ScriptException {
+    return compile(bodyLines, null, null);
+  }
+
+  /**
+   * @param sourceFile file name used in error locations, null when unknown.
+   * @param fileLines 1-based file line per body entry, parallel to
+   *     {@code bodyLines}; null or short lists fall back to body-relative numbers.
+   */
+  public static List<Statement> compile(
+      List<String> bodyLines, String sourceFile, List<Integer> fileLines)
+      throws ScriptException {
     List<RawLine> raw = new ArrayList<RawLine>();
     for (int i = 0; i < bodyLines.size(); i++) {
       String line = bodyLines.get(i);
       if (line == null) continue;
       String trimmed = line.trim();
       if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-      raw.add(new RawLine(i + 1, indentOf(line), trimmed));
+      int number = i + 1;
+      if (fileLines != null && i < fileLines.size() && fileLines.get(i) != null) {
+        number = fileLines.get(i).intValue();
+      }
+      raw.add(new RawLine(sourceFile, number, indentOf(line), trimmed));
     }
     if (raw.isEmpty()) return new ArrayList<Statement>();
     int base = raw.get(0).indent;
@@ -98,7 +114,9 @@ public final class StatementCompiler {
         return new CompileResult(out, i);
       }
       if (line.indent > baseIndent) {
-        throw new ScriptException("Unexpected indent at script line " + line.number);
+        throw new ScriptException("unexpected-indent", "Unexpected indent.")
+            .atLocation(line.file, line.number)
+            .withSnippet(line.text);
       }
 
       String t = line.text;
@@ -107,7 +125,11 @@ public final class StatementCompiler {
       if (lower.startsWith("if ")) {
         List<Condition> conditions = new ArrayList<Condition>();
         List<List<Statement>> bodies = new ArrayList<List<Statement>>();
-        conditions.add(Conditions.parse(Conditions.stripIfHeader(t)));
+        try {
+          conditions.add(Conditions.parse(Conditions.stripIfHeader(t)));
+        } catch (ScriptException e) {
+          throw locate(e, line);
+        }
         int childBase = childIndent(lines, i + 1, baseIndent);
         CompileResult thenBlock = compileBlock(lines, i + 1, childBase);
         bodies.add(thenBlock.statements);
@@ -117,7 +139,11 @@ public final class StatementCompiler {
           RawLine next = lines.get(i);
           if (next.indent != baseIndent) break;
           if (Conditions.isElseIfHeader(next.text)) {
-            conditions.add(Conditions.parse(Conditions.stripElseIfHeader(next.text)));
+            try {
+              conditions.add(Conditions.parse(Conditions.stripElseIfHeader(next.text)));
+            } catch (ScriptException e) {
+              throw locate(e, next);
+            }
             int elseIfChild = childIndent(lines, i + 1, baseIndent);
             CompileResult elseIfBlock = compileBlock(lines, i + 1, elseIfChild);
             bodies.add(elseIfBlock.statements);
@@ -138,16 +164,22 @@ public final class StatementCompiler {
             i = elseBlock.nextIndex;
           }
         }
-        out.add(new IfChainStatement(conditions, bodies, elseBody));
+        out.add(
+            new IfChainStatement(line.file, line.number, t, conditions, bodies, elseBody));
         continue;
       }
 
       Matcher whileM = WHILE.matcher(t);
       if (whileM.matches()) {
-        Condition cond = Conditions.parse(whileM.group(1).trim());
+        final Condition cond;
+        try {
+          cond = Conditions.parse(whileM.group(1).trim());
+        } catch (ScriptException e) {
+          throw locate(e, line);
+        }
         int childBase = childIndent(lines, i + 1, baseIndent);
         CompileResult body = compileBlock(lines, i + 1, childBase);
-        out.add(new WhileStatement(cond, body.statements));
+        out.add(new WhileStatement(line.file, line.number, t, cond, body.statements));
         i = body.nextIndex;
         continue;
       }
@@ -155,7 +187,7 @@ public final class StatementCompiler {
       if (LOOP_PLAYERS.matcher(t).matches()) {
         int childBase = childIndent(lines, i + 1, baseIndent);
         CompileResult body = compileBlock(lines, i + 1, childBase);
-        out.add(new LoopPlayersStatement(body.statements));
+        out.add(new LoopPlayersStatement(line.file, line.number, t, body.statements));
         i = body.nextIndex;
         continue;
       }
@@ -165,17 +197,22 @@ public final class StatementCompiler {
         final String var = loopList.group(1);
         int childBase = childIndent(lines, i + 1, baseIndent);
         CompileResult body = compileBlock(lines, i + 1, childBase);
-        out.add(new LoopListStatement(var, body.statements));
+        out.add(new LoopListStatement(line.file, line.number, t, var, body.statements));
         i = body.nextIndex;
         continue;
       }
 
       Matcher loopTimes = LOOP_TIMES.matcher(t);
       if (loopTimes.matches()) {
-        final Expression countExpr = Expressions.parse(loopTimes.group(1).trim());
+        final Expression countExpr;
+        try {
+          countExpr = Expressions.parse(loopTimes.group(1).trim());
+        } catch (ScriptException e) {
+          throw locate(e, line);
+        }
         int childBase = childIndent(lines, i + 1, baseIndent);
         CompileResult body = compileBlock(lines, i + 1, childBase);
-        out.add(new LoopTimesStatement(countExpr, body.statements));
+        out.add(new LoopTimesStatement(line.file, line.number, t, countExpr, body.statements));
         i = body.nextIndex;
         continue;
       }
@@ -187,42 +224,67 @@ public final class StatementCompiler {
       }
 
       if (t.endsWith(":")) {
-        throw new ScriptException("Unknown block at script line " + line.number + ": " + t);
+        throw new ScriptException("unknown-block", "Unknown block: " + t)
+            .atLocation(line.file, line.number)
+            .withSnippet(t);
       }
 
       if (lower.equals("break") || lower.equals("exit loop") || lower.equals("stop loop")) {
-        out.add(new LoopControlStatement(ScriptContext.LoopControl.BREAK));
+        out.add(new LoopControlStatement(line.file, line.number, t, ScriptContext.LoopControl.BREAK));
         i++;
         continue;
       }
       if (lower.equals("continue") || lower.equals("skip") || lower.equals("next loop")) {
-        out.add(new LoopControlStatement(ScriptContext.LoopControl.CONTINUE));
+        out.add(
+            new LoopControlStatement(line.file, line.number, t, ScriptContext.LoopControl.CONTINUE));
         i++;
         continue;
       }
 
       Matcher ret = RETURN.matcher(t);
       if (ret.matches()) {
-        Expression value =
-            ret.group(1) == null || ret.group(1).trim().isEmpty()
-                ? null
-                : Expressions.parse(ret.group(1).trim());
-        out.add(new ReturnStatement(value));
+        final Expression value;
+        try {
+          value =
+              ret.group(1) == null || ret.group(1).trim().isEmpty()
+                  ? null
+                  : Expressions.parse(ret.group(1).trim());
+        } catch (ScriptException e) {
+          throw locate(e, line);
+        }
+        out.add(new ReturnStatement(line.file, line.number, t, value));
         i++;
         continue;
       }
 
       Matcher call = CALL.matcher(t);
       if (call.matches()) {
-        out.add(new CallFunctionStatement(call.group(1), parseArgList(call.group(2))));
+        final List<Expression> callArgs;
+        try {
+          callArgs = parseArgList(call.group(2));
+        } catch (ScriptException e) {
+          throw locate(e, line);
+        }
+        out.add(new CallFunctionStatement(line.file, line.number, t, call.group(1), callArgs));
         i++;
         continue;
       }
 
-      out.add(new EffectStatement(Effects.parse(t)));
+      final Effect effect;
+      try {
+        effect = Effects.parse(t);
+      } catch (ScriptException e) {
+        throw locate(e, line);
+      }
+      out.add(new EffectStatement(line.file, line.number, t, effect));
       i++;
     }
     return new CompileResult(out, i);
+  }
+
+  /** Attaches the failing source line to a parse error and rethrows it. */
+  private static ScriptException locate(ScriptException e, RawLine line) {
+    return e.atLocation(line.file, line.number).withSnippet(line.text);
   }
 
   private static List<Expression> parseArgList(String raw) throws ScriptException {
@@ -278,9 +340,22 @@ public final class StatementCompiler {
 
   private static void runBody(List<Statement> body, ScriptContext ctx) throws ScriptException {
     for (Statement s : body) {
-      s.run(ctx);
+      runStatement(s, ctx);
       if (ctx.shouldStop()) return;
       if (ctx.getLoopControl() != ScriptContext.LoopControl.NONE) return;
+    }
+  }
+
+  /**
+   * Runs one compiled statement, attaching its source location to any error
+   * that does not already carry one. Innermost location wins, so nested
+   * bodies and function calls always report where the failure happened.
+   */
+  public static void runStatement(Statement s, ScriptContext ctx) throws ScriptException {
+    try {
+      s.run(ctx);
+    } catch (ScriptException e) {
+      throw e.atLocation(s.sourceFile(), s.line()).withSnippet(s.sourceText());
     }
   }
 
@@ -288,10 +363,10 @@ public final class StatementCompiler {
       throws ScriptException {
     ScriptFunction fn = ctx.getFunction(name);
     if (fn == null) {
-      throw new ScriptException("Unknown function: " + name);
+      throw new ScriptException("unknown-function", "Unknown function: " + name);
     }
     if (ctx.getFunctionDepth() > 32) {
-      throw new ScriptException("Function recursion limit exceeded.");
+      throw new ScriptException("recursion-limit", "Function recursion limit exceeded.");
     }
     Map<String, FlValue> saved = ctx.snapshotLocals();
     FlValue prevReturn = ctx.getReturnValue();
@@ -324,11 +399,13 @@ public final class StatementCompiler {
   }
 
   private static final class RawLine {
+    final String file;
     final int number;
     final int indent;
     final String text;
 
-    RawLine(int number, int indent, String text) {
+    RawLine(String file, int number, int indent, String text) {
+      this.file = file;
       this.number = number;
       this.indent = indent;
       this.text = text;
@@ -347,12 +424,55 @@ public final class StatementCompiler {
 
   public interface Statement {
     void run(ScriptContext ctx) throws ScriptException;
+
+    /** 1-based source line of this statement, -1 when unknown. */
+    default int line() {
+      return -1;
+    }
+
+    /** Source file name of this statement, null when unknown. */
+    default String sourceFile() {
+      return null;
+    }
+
+    /** Source text of this statement, null when unknown. */
+    default String sourceText() {
+      return null;
+    }
   }
 
-  private static final class EffectStatement implements Statement {
+  private abstract static class LocatedStatement implements Statement {
+    private final String file;
+    private final int line;
+    private final String source;
+
+    LocatedStatement(String file, int line, String source) {
+      this.file = file;
+      this.line = line;
+      this.source = source;
+    }
+
+    @Override
+    public final int line() {
+      return line;
+    }
+
+    @Override
+    public final String sourceFile() {
+      return file;
+    }
+
+    @Override
+    public final String sourceText() {
+      return source;
+    }
+  }
+
+  private static final class EffectStatement extends LocatedStatement {
     private final Effect effect;
 
-    EffectStatement(Effect effect) {
+    EffectStatement(String file, int line, String source, Effect effect) {
+      super(file, line, source);
       this.effect = effect;
     }
 
@@ -364,10 +484,11 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class LoopControlStatement implements Statement {
+  private static final class LoopControlStatement extends LocatedStatement {
     private final ScriptContext.LoopControl control;
 
-    LoopControlStatement(ScriptContext.LoopControl control) {
+    LoopControlStatement(String file, int line, String source, ScriptContext.LoopControl control) {
+      super(file, line, source);
       this.control = control;
     }
 
@@ -378,10 +499,11 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class ReturnStatement implements Statement {
+  private static final class ReturnStatement extends LocatedStatement {
     private final Expression value;
 
-    ReturnStatement(Expression value) {
+    ReturnStatement(String file, int line, String source, Expression value) {
+      super(file, line, source);
       this.value = value;
     }
 
@@ -397,11 +519,13 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class CallFunctionStatement implements Statement {
+  private static final class CallFunctionStatement extends LocatedStatement {
     private final String name;
     private final List<Expression> args;
 
-    CallFunctionStatement(String name, List<Expression> args) {
+    CallFunctionStatement(
+        String file, int line, String source, String name, List<Expression> args) {
+      super(file, line, source);
       this.name = name;
       this.args = args;
     }
@@ -415,13 +539,19 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class IfChainStatement implements Statement {
+  private static final class IfChainStatement extends LocatedStatement {
     private final List<Condition> conditions;
     private final List<List<Statement>> bodies;
     private final List<Statement> elseBody;
 
     IfChainStatement(
-        List<Condition> conditions, List<List<Statement>> bodies, List<Statement> elseBody) {
+        String file,
+        int line,
+        String source,
+        List<Condition> conditions,
+        List<List<Statement>> bodies,
+        List<Statement> elseBody) {
+      super(file, line, source);
       this.conditions = conditions;
       this.bodies = bodies;
       this.elseBody = elseBody;
@@ -441,11 +571,13 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class WhileStatement implements Statement {
+  private static final class WhileStatement extends LocatedStatement {
     private final Condition condition;
     private final List<Statement> body;
 
-    WhileStatement(Condition condition, List<Statement> body) {
+    WhileStatement(
+        String file, int line, String source, Condition condition, List<Statement> body) {
+      super(file, line, source);
       this.condition = condition;
       this.body = body;
     }
@@ -457,7 +589,7 @@ public final class StatementCompiler {
         ctx.consumeStep();
         if (ctx.shouldStop()) return;
         if (++guard > 10000) {
-          throw new ScriptException("while loop exceeded 10000 iterations");
+          throw new ScriptException("loop-limit", "while loop exceeded 10000 iterations");
         }
         ctx.clearLoopControl();
         runBody(body, ctx);
@@ -474,10 +606,11 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class LoopPlayersStatement implements Statement {
+  private static final class LoopPlayersStatement extends LocatedStatement {
     private final List<Statement> body;
 
-    LoopPlayersStatement(List<Statement> body) {
+    LoopPlayersStatement(String file, int line, String source, List<Statement> body) {
+      super(file, line, source);
       this.body = body;
     }
 
@@ -499,11 +632,13 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class LoopListStatement implements Statement {
+  private static final class LoopListStatement extends LocatedStatement {
     private final String listVar;
     private final List<Statement> body;
 
-    LoopListStatement(String listVar, List<Statement> body) {
+    LoopListStatement(
+        String file, int line, String source, String listVar, List<Statement> body) {
+      super(file, line, source);
       this.listVar = listVar;
       this.body = body;
     }
@@ -529,11 +664,13 @@ public final class StatementCompiler {
     }
   }
 
-  private static final class LoopTimesStatement implements Statement {
+  private static final class LoopTimesStatement extends LocatedStatement {
     private final Expression countExpr;
     private final List<Statement> body;
 
-    LoopTimesStatement(Expression countExpr, List<Statement> body) {
+    LoopTimesStatement(
+        String file, int line, String source, Expression countExpr, List<Statement> body) {
+      super(file, line, source);
       this.countExpr = countExpr;
       this.body = body;
     }

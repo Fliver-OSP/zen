@@ -47,11 +47,13 @@ public final class FlParser {
     Set<String> currentMethods = null;
     int currentLine = -1;
     List<String> currentBody = null;
+    List<Integer> currentBodyLines = null;
     boolean inOptions = false;
     String currentFunction = null;
     List<String> currentParams = null;
     int functionLine = -1;
     List<String> functionBody = null;
+    List<Integer> functionBodyLines = null;
 
     for (int i = 0; i < lines.size(); i++) {
       int lineNumber = i + 1;
@@ -73,16 +75,20 @@ public final class FlParser {
             currentMethods,
             currentLine,
             currentBody,
+            currentBodyLines,
             currentFunction,
             currentParams,
             functionLine,
-            functionBody);
+            functionBody,
+            functionBodyLines);
         currentPath = null;
         currentMethods = null;
         currentBody = null;
+        currentBodyLines = null;
         currentFunction = null;
         currentParams = null;
         functionBody = null;
+        functionBodyLines = null;
         inOptions = false;
 
         Matcher trigger = TRIGGER.matcher(trimmed);
@@ -115,6 +121,7 @@ public final class FlParser {
           currentPath = path;
           currentLine = lineNumber;
           currentBody = new ArrayList<String>();
+          currentBodyLines = new ArrayList<Integer>();
           currentMethods = parseMethods(trigger.group(2));
           continue;
         }
@@ -130,6 +137,7 @@ public final class FlParser {
           currentParams = parseParams(fn.group(2));
           functionLine = lineNumber;
           functionBody = new ArrayList<String>();
+          functionBodyLines = new ArrayList<Integer>();
           continue;
         }
 
@@ -149,8 +157,10 @@ public final class FlParser {
           }
         } else if (currentFunction != null) {
           functionBody.add(raw.replace("\t", "    "));
+          functionBodyLines.add(lineNumber);
         } else if (currentPath != null) {
           currentBody.add(raw.replace("\t", "    "));
+          currentBodyLines.add(lineNumber);
         } else {
           errors.add(messages.get("parser.orphan-indent", "line", String.valueOf(lineNumber)));
         }
@@ -165,10 +175,12 @@ public final class FlParser {
         currentMethods,
         currentLine,
         currentBody,
+        currentBodyLines,
         currentFunction,
         currentParams,
         functionLine,
-        functionBody);
+        functionBody,
+        functionBodyLines);
 
     return new FlScript(fileName, endpoints, functions, options, errors, warnings);
   }
@@ -181,18 +193,26 @@ public final class FlParser {
       Set<String> currentMethods,
       int currentLine,
       List<String> currentBody,
+      List<Integer> currentBodyLines,
       String currentFunction,
       List<String> currentParams,
       int functionLine,
-      List<String> functionBody) {
+      List<String> functionBody,
+      List<Integer> functionBodyLines) {
     if (currentPath != null) {
       endpoints.add(
-          new Endpoint(currentPath, fileName, currentLine, currentBody, currentMethods));
+          new Endpoint(
+              currentPath, fileName, currentLine, currentBody, currentMethods, currentBodyLines));
     }
     if (currentFunction != null) {
       functions.add(
           new ScriptFunction(
-              currentFunction, currentParams, functionBody, fileName, functionLine));
+              currentFunction,
+              currentParams,
+              functionBody,
+              fileName,
+              functionLine,
+              functionBodyLines));
     }
   }
 

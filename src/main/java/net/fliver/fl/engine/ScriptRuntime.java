@@ -69,7 +69,7 @@ public final class ScriptRuntime {
     ctx.setPathParams(pathParams);
     List<StatementCompiler.Statement> statements = StatementCompiler.compileCached(endpoint);
     for (StatementCompiler.Statement statement : statements) {
-      statement.run(ctx);
+      StatementCompiler.runStatement(statement, ctx);
       if (ctx.getError() != null || ctx.shouldStop()) break;
     }
     return ctx;
